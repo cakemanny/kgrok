@@ -1,0 +1,8 @@
+[project]
+name        = "kgrok"
+description = "forward local processes into k8s cluster"
+version     = "0.1.0"
+
+[project.scripts]
+kgrok        = "kgrok.local:main"
+kgrok-remote = "kgrok.remote:main"
