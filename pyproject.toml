@@ -6,3 +6,11 @@ version     = "0.1.0"
 [project.scripts]
 kgrok        = "kgrok.local:main"
 kgrok-remote = "kgrok.remote:main"
+
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = [
+  "tests",
+]
+trio_mode = true

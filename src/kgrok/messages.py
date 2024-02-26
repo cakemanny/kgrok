@@ -1,3 +1,4 @@
+# TODO: rename module IPC?
 from dataclasses import dataclass
 import io
 
@@ -26,10 +27,14 @@ class Text:
     _cc_message_length = len(connection_closed(0))
 
     @staticmethod
-    async def read_ipc_message(stream: trio.abc.Stream):
-        def extract_conn_id(prefix): return int(prefix[3:11], 16)
+    async def read_ipc_message(stream: trio.abc.ReceiveStream):
+        def extract_conn_id(prefix):
+            return int(prefix[3:11], 16)
 
         prefix = await stream.receive_some(Text._cc_message_length)
+        if prefix.startswith(b'NC:'):
+            conn_id = extract_conn_id(prefix)
+            return NewConnection(conn_id)
         if prefix.startswith(b'CC:'):
             conn_id = extract_conn_id(prefix)
             return ConnectionClosed(conn_id)
@@ -38,7 +43,7 @@ class Text:
             length = await stream.receive_some(9)
             assert length[-1:] == b':', f"{length=}"
             length = int(length[:8], 16)
-            data = await stream.receive_some(length)
+            data = await stream.receive_some(length + 1)
             assert data[-1:] == b'\n', f'{data=}'
             data = data[:-1]
             return DataReceived(conn_id, data)
@@ -53,4 +58,9 @@ class DataReceived:
 
 @dataclass
 class ConnectionClosed:
+    conn_id: int
+
+
+@dataclass
+class NewConnection:
     conn_id: int
