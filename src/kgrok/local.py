@@ -39,7 +39,8 @@ async def handle_connection(
             nursery.start_soon(local_to_remote, response_channel)
 
 
-async def write_responses(remote_stdin: SendStream, *, task_status=trio.TASK_STATUS_IGNORED):
+async def write_responses(remote_stdin: SendStream, *,
+                          task_status=trio.TASK_STATUS_IGNORED):
     send, recv = trio.open_memory_channel(0)
     task_status.started(send)
 
@@ -55,7 +56,11 @@ async def write_responses(remote_stdin: SendStream, *, task_status=trio.TASK_STA
                     print(f'unexpected: {other=}')
 
 
-async def accept_connections(nursery: trio.Nursery, remote_stdio: trio.StapledStream, local_svc_addr):
+async def accept_connections(
+    nursery: trio.Nursery,
+    remote_stdio: trio.StapledStream,
+    local_svc_addr: tuple[str, int]
+):
 
     response_channel: trio.MemorySendChannel = await nursery.start(
         write_responses, remote_stdio.send_stream,

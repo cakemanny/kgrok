@@ -5,6 +5,7 @@ import sys
 
 import click
 import trio
+from trio.abc import SendChannel, ReceiveChannel
 
 from kgrok.messages import (
     ConnectionClosed, DataReceived, Text as msg,
@@ -17,24 +18,18 @@ CONNECTION_COUNTER = count()
 class Handler:
     def __init__(self) -> None:
         self.stdout = trio.wrap_file(sys.stdout.buffer)
-        self.recv_channels = {}
+        self.new_connections: SendChannel[tuple[int, SendChannel]]
 
     async def __call__(self, stream: trio.SocketStream) -> Any:
         conn_id = next(CONNECTION_COUNTER)
 
         async with trio.open_nursery() as nursery:
             nursery.start_soon(self._handle_recv, conn_id, stream)
-            await nursery.start(self._handle_resp, conn_id, stream)
+            nursery.start_soon(self._handle_resp, conn_id, stream)
 
-    async def _handle_resp(self, conn_id: int, stream: trio.SocketStream,
-                           *, task_status=trio.TASK_STATUS_IGNORED):
-
+    async def _handle_resp(self, conn_id: int, stream: trio.SocketStream):
         send, recv = trio.open_memory_channel(80)
-
-        # yuk - TODO: work out how we can share send the channel to the
-        # stdin reader better
-        self.recv_channels[conn_id] = send
-        task_status.started()
+        await self.new_connections.send((conn_id, send,))
 
         async with recv:
             async for value in recv:
@@ -54,30 +49,75 @@ class Handler:
             await self.stdout.write(msg.connection_closed(conn_id))
 
 
-async def read_stdin(channels: dict[int, trio.MemorySendChannel]):
-    # WARN: Absolutely no other use of stdin is allowed
-    stdin = trio.lowlevel.FdStream(os.dup(sys.stdin.fileno()))
-    try:
-        while True:
-            message = await msg.read_ipc_message(stdin)
-            channel = channels.get(message.conn_id)
-            if channel is not None:
-                await channel.send(message)
-                if isinstance(message, ConnectionClosed):
-                    await channel.aclose()
-                    del channels[message.conn_id]
+async def combine[L, R](left: ReceiveChannel[L],
+                        right: ReceiveChannel[R],
+                        *, task_status=trio.TASK_STATUS_IGNORED):
+    out: SendChannel[tuple[L, None] | tuple[None, R]]
+    out, recv = trio.open_memory_channel(0)
+    task_status.started(recv)
+
+    async def read_left():
+        async for value in left:
+            await out.send((value, None))
+
+    async def read_right():
+        async for value in right:
+            await out.send((None, value))
+
+    async with out:
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(read_left)
+            nursery.start_soon(read_right)
+
+
+async def dispatch_stdin(
+    from_decode: ReceiveChannel,
+    new_channels: ReceiveChannel[tuple[int, SendChannel]]
+):
+    channels: dict[int, SendChannel] = {}
+
+    async with trio.open_nursery() as nursery:
+        messages_or_new_connections = await nursery.start(
+            combine, from_decode, new_channels)
+
+        async for (message, new_channel) in messages_or_new_connections:
+            if new_channel is not None:
+                conn_id, send = new_channel
+                channels[conn_id] = send
             else:
-                print(f'dropped message for {message.conn_id=}',
-                      file=sys.stderr)
-    finally:
-        await stdin.aclose()
+                assert message is not None
+                channel = channels.get(message.conn_id)
+                if channel is not None:
+                    await channel.send(message)
+                    if isinstance(message, ConnectionClosed):
+                        await channel.aclose()
+                        del channels[message.conn_id]
+                else:
+                    print(
+                        f'dropped message for {message.conn_id=}', file=sys.stderr,
+                    )
+        await messages_or_new_connections.aclose()
+
+
+async def decode_stdin(decoded: SendChannel):
+    # WARN: Absolutely no other use of stdin is allowed
+    async with decoded:
+        async with trio.lowlevel.FdStream(os.dup(sys.stdin.fileno())) as stdin:
+            while True:
+                message = await msg.read_ipc_message(stdin)
+                await decoded.send(message)
 
 
 async def listen(port: int):
     handler = Handler()
 
     async with trio.open_nursery() as nursery:
-        nursery.start_soon(read_stdin, handler.recv_channels)
+        from_decode, to_dispatch = trio.open_memory_channel(0)
+        nursery.start_soon(decode_stdin, from_decode)
+        # nc = new channels/connections
+        handler.new_connections, nc_to_dispatch = trio.open_memory_channel(0)
+        nursery.start_soon(dispatch_stdin, to_dispatch, nc_to_dispatch)
+
         nursery.start_soon(trio.serve_tcp, handler, port)
 
 
