@@ -104,15 +104,39 @@ def run_remote(port):
     )
 
 
+def run_kubectl(port):
+
+    return functools.partial(
+        trio.run_process,
+        [
+            "kubectl", "-it", "run", "kgrok-remote",
+            "--image=kgrok-remote",
+            "--port", str(port),
+            "--image-pull-policy=Never",
+            "--restart=Never",
+            "--",
+            "--port", str(port),
+        ],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+    )
+
+
 async def async_main(service_name, host, port):
 
-    remote_port = port + 1  # just for dev
+    # remote_port = port + 1  # just for dev
 
-    async with trio.open_nursery() as nursery:
-        process = await nursery.start(run_remote(remote_port))
-        nursery.start_soon(
-            accept_connections, nursery, process.stdio, (host, port),
-        )
+    try:
+        async with trio.open_nursery() as nursery:
+            process = await nursery.start(run_kubectl(port))
+            nursery.start_soon(
+                accept_connections, nursery, process.stdio, (host, port),
+            )
+    except KeyboardInterrupt as ki:
+        try:
+            await trio.run_process(["kubectl", "delete", "pod", "kgrok-remote"])
+        except Exception as e:
+            print("failed to delete pod", e)
+        raise ki
 
 
 @click.command()

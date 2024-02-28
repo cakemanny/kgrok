@@ -1,0 +1,18 @@
+# Usual Recommendations
+.git
+.gitignore
+Dockerfile*
+docker-compose*
+.dockerignore
+*.md
+
+# Things from this project
+**/*.pyc
+**/__pycache__/
+.pytest_cache
+.venv
+**/*.egg-info
+
+# Local dev files
+.envrc
+*.swp
