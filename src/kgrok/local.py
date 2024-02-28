@@ -53,7 +53,7 @@ async def write_responses(remote_stdin: SendStream, *,
                 case ConnectionClosed(conn_id):
                     await remote_stdin.send_all(msg.connection_closed(conn_id))
                 case other:
-                    print(f'unexpected: {other=}')
+                    print(f'unexpected: {other=}', file=sys.stderr)
 
 
 async def accept_connections(
@@ -92,6 +92,9 @@ async def accept_connections(
                 else:
                     print(f'unknown connection {conn_id=}',
                           file=sys.stderr)
+            case None:
+                # TODO: close all connections?
+                break
 
 
 def run_remote(port):
@@ -104,12 +107,19 @@ def run_remote(port):
     )
 
 
-def run_kubectl(port):
+def run_kubectl_run(port):
+    # Currently doing this to load into kind cluster:
+    #
+    #   docker build . -t kgrok-remote
+    #   kind load docker-image kgrok-remote
+    #
 
     return functools.partial(
         trio.run_process,
         [
-            "kubectl", "-it", "run", "kgrok-remote",
+            # The --rm doesn't seem to work without --tty
+            # so, we have to call kubectl delete
+            "kubectl", "run", "-i", "--rm", "kgrok-remote",
             "--image=kgrok-remote",
             "--port", str(port),
             "--image-pull-policy=Never",
@@ -118,25 +128,27 @@ def run_kubectl(port):
             "--port", str(port),
         ],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        # capture stderr?
     )
 
 
 async def async_main(service_name, host, port):
 
-    # remote_port = port + 1  # just for dev
-
     try:
         async with trio.open_nursery() as nursery:
-            process = await nursery.start(run_kubectl(port))
+            process = await nursery.start(run_kubectl_run(port))
             nursery.start_soon(
                 accept_connections, nursery, process.stdio, (host, port),
             )
-    except KeyboardInterrupt as ki:
+    except subprocess.CalledProcessError as cpe:
+        print(f'calledprocesserror {cpe=}', file=sys.stderr)
+        raise
+    finally:
         try:
+            # TODO: consider if --wait=false will be ok
             await trio.run_process(["kubectl", "delete", "pod", "kgrok-remote"])
         except Exception as e:
-            print("failed to delete pod", e)
-        raise ki
+            print("failed to delete pod", repr(e))
 
 
 @click.command()

@@ -32,6 +32,8 @@ class Text:
             return int(prefix[3:11], 16)
 
         prefix = await stream.receive_some(Text._cc_message_length)
+        if prefix == b'':
+            return None
         if prefix.startswith(b'NC:'):
             conn_id = extract_conn_id(prefix)
             return NewConnection(conn_id)

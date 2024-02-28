@@ -59,6 +59,7 @@ async def combine[L, R](left: ReceiveChannel[L],
     async def read_left():
         async for value in left:
             await out.send((value, None))
+        # TODO: cancel right if left closes
 
     async def read_right():
         async for value in right:
@@ -105,6 +106,8 @@ async def decode_stdin(decoded: SendChannel):
         async with trio.lowlevel.FdStream(os.dup(sys.stdin.fileno())) as stdin:
             while True:
                 message = await msg.read_ipc_message(stdin)
+                if message is None:
+                    break
                 await decoded.send(message)
 
 
