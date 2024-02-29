@@ -1,9 +1,12 @@
-import sys
+from contextlib import AsyncExitStack
 import functools
+import logging
 import subprocess
-import trio
-import click
+import sys
+
 from trio.abc import SendStream
+import click
+import trio
 
 from kgrok.messages import (
     ConnectionClosed, DataReceived, NewConnection, Text as msg,
@@ -33,10 +36,9 @@ async def handle_connection(
             await response_channel.send(DataReceived(conn_id, data))
         await response_channel.send(ConnectionClosed(conn_id))
 
-    async with local_stream:
-        async with trio.open_nursery() as nursery:
-            nursery.start_soon(remote_to_local, recv)
-            nursery.start_soon(local_to_remote, response_channel)
+    async with local_stream, trio.open_nursery() as nursery:
+        nursery.start_soon(remote_to_local, recv)
+        nursery.start_soon(local_to_remote, response_channel)
 
 
 async def write_responses(remote_stdin: SendStream, *,
@@ -68,33 +70,38 @@ async def accept_connections(
 
     connections: dict[int, trio.MemorySendChannel] = {}
 
-    while True:
-        message = await msg.read_ipc_message(remote_stdio)
-        match message:
-            case NewConnection(conn_id):
-                send, recv = trio.open_memory_channel(80)
-                connections[conn_id] = send
-                nursery.start_soon(
-                    handle_connection, conn_id, local_svc_addr, response_channel, recv)
-            case DataReceived(conn_id, _):
-                conn = connections.get(conn_id)
-                if conn:
-                    await conn.send(message)
-                else:
-                    print(f'dropped data for {conn_id=}',
-                          file=sys.stderr)
-            case ConnectionClosed(conn_id):
-                conn = connections.get(conn_id)
-                if conn:
-                    await conn.send(message)
-                    await conn.aclose()
-                    del connections[conn_id]
-                else:
-                    print(f'unknown connection {conn_id=}',
-                          file=sys.stderr)
-            case None:
-                # TODO: close all connections?
-                break
+    try:
+        while True:
+            message = await msg.read_ipc_message(remote_stdio)
+            match message:
+                case NewConnection(conn_id):
+                    send, recv = trio.open_memory_channel(80)
+                    connections[conn_id] = send
+                    nursery.start_soon(
+                        handle_connection,
+                        conn_id, local_svc_addr, response_channel, recv,
+                    )
+                case DataReceived(conn_id, _):
+                    conn = connections.get(conn_id)
+                    if conn:
+                        await conn.send(message)
+                    else:
+                        print(f'dropped data for {conn_id=}', file=sys.stderr)
+                case ConnectionClosed(conn_id):
+                    conn = connections.get(conn_id)
+                    if conn:
+                        await conn.send(message)
+                        await conn.aclose()
+                        del connections[conn_id]
+                    else:
+                        print(f'unknown connection {conn_id=}', file=sys.stderr)
+                case None:
+                    break
+    finally:
+        async with AsyncExitStack() as stack:
+            for chan in connections.values():
+                stack.push_async_exit(chan)
+
 
 
 def run_remote(port):
@@ -145,7 +152,6 @@ async def async_main(service_name, host, port):
         raise
     finally:
         try:
-            # TODO: consider if --wait=false will be ok
             await trio.run_process(["kubectl", "delete", "pod", "kgrok-remote"])
         except Exception as e:
             print("failed to delete pod", repr(e))
@@ -161,6 +167,10 @@ def main(service_name, host_port):
         port = int(port)
     else:
         port = int(host_port)
+
+    logging.basicConfig(
+        level=logging.INFO,
+    )
 
     trio.run(async_main, service_name, host, port)
 

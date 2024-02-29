@@ -33,7 +33,7 @@ test:
 
 .PHONY: lint
 lint:
-	$(PY) -m flake8
+	$(PY) -m ruff check
 
 .venv:
 	uv venv .venv

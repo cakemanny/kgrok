@@ -14,3 +14,6 @@ testpaths = [
   "tests",
 ]
 trio_mode = true
+
+[tool.ruff]
+src = ["src", "test"]
