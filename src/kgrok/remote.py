@@ -71,10 +71,9 @@ async def combine[L, R](left: ReceiveChannel[L],
         log.debug('cancel right')
         cancel_scope.cancel()
 
-    with trio.CancelScope() as cancel_scope:
-        async with out, trio.open_nursery() as nursery:
-            nursery.start_soon(read_left, cancel_scope)
-            nursery.start_soon(read_right, cancel_scope)
+    async with out, trio.open_nursery() as nursery:
+        nursery.start_soon(read_left, nursery.cancel_scope)
+        nursery.start_soon(read_right, nursery.cancel_scope)
 
 
 async def dispatch_stdin(
@@ -127,17 +126,15 @@ async def handle_sigterm(cancel_scope):
 async def listen(port: int):
     handler = Handler()
 
-    cancel_scope = trio.CancelScope()
-    with cancel_scope:
-        async with trio.open_nursery() as nursery:
-            from_decode, to_dispatch = trio.open_memory_channel(0)
-            nursery.start_soon(decode_stdin, from_decode)
-            # nc = new channels/connections
-            handler.new_connections, nc_to_dispatch = trio.open_memory_channel(0)
-            nursery.start_soon(dispatch_stdin, to_dispatch, nc_to_dispatch)
+    async with trio.open_nursery() as nursery:
+        from_decode, to_dispatch = trio.open_memory_channel(0)
+        nursery.start_soon(decode_stdin, from_decode)
+        # nc = new channels/connections
+        handler.new_connections, nc_to_dispatch = trio.open_memory_channel(0)
+        nursery.start_soon(dispatch_stdin, to_dispatch, nc_to_dispatch)
 
-            nursery.start_soon(trio.serve_tcp, handler, port)
-            nursery.start_soon(handle_sigterm, cancel_scope)
+        nursery.start_soon(trio.serve_tcp, handler, port)
+        nursery.start_soon(handle_sigterm, nursery.cancel_scope)
 
 
 @click.command()
