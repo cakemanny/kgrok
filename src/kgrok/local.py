@@ -2,15 +2,24 @@ from contextlib import AsyncExitStack
 import functools
 import logging
 import subprocess
-import sys
+import typing
 
+from lightkube import AsyncClient
+from lightkube.config.kubeconfig import KubeConfig, SingleConfig
+from lightkube.models.core_v1 import ServicePort, ServiceSpec
+from lightkube.models.meta_v1 import ObjectMeta
+from lightkube.resources.core_v1 import Service
 from trio.abc import SendStream, SendChannel, ReceiveChannel
+import lightkube
 import click
 import trio
 
 from kgrok.messages import (
     ConnectionClosed, DataReceived, NewConnection, Text as encoding,
 )
+
+
+log = logging.getLogger(__name__)
 
 
 async def handle_connection(
@@ -30,6 +39,8 @@ async def handle_connection(
                         await local_stream.send_all(data)
                     case ConnectionClosed():
                         await local_stream.send_eof()
+                    case _:
+                        raise TypeError(type(message))
 
     async def local_to_remote(response_channel):
         async for data in local_stream:
@@ -48,11 +59,7 @@ async def write_responses(remote_stdin: SendStream, *,
 
     async with recv:
         async for message in recv:
-            match message:
-                case DataReceived() | ConnectionClosed():
-                    await remote_stdin.send_all(encoding.encode(message))
-                case other:
-                    print(f'unexpected: {other=}', file=sys.stderr)
+            await remote_stdin.send_all(encoding.encode(message))
 
 
 async def accept_connections(
@@ -83,7 +90,7 @@ async def accept_connections(
                     if conn:
                         await conn.send(message)
                     else:
-                        print(f'dropped data for {conn_id=}', file=sys.stderr)
+                        log.warning(f'dropped data for {conn_id=}')
                 case ConnectionClosed(conn_id):
                     conn = connections.get(conn_id)
                     if conn:
@@ -91,7 +98,7 @@ async def accept_connections(
                         await conn.aclose()
                         del connections[conn_id]
                     else:
-                        print(f'unknown connection {conn_id=}', file=sys.stderr)
+                        log.warning(f'unknown connection {conn_id=}')
                 case None:
                     break
     finally:
@@ -99,6 +106,9 @@ async def accept_connections(
             for chan in connections.values():
                 stack.push_async_exit(chan)
 
+###
+### Startup
+###
 
 def run_remote(port):
 
@@ -110,7 +120,13 @@ def run_remote(port):
     )
 
 
-def run_kubectl_run(port):
+def prepare_labels(labels: dict[str, str]) -> str:
+    return ','.join(
+        '='.join((k, v)) for k,v in labels.items()
+    )
+
+
+def run_kubectl_run(port, labels, namespace):
 
     return functools.partial(
         trio.run_process,
@@ -122,6 +138,7 @@ def run_kubectl_run(port):
             "--port", str(port),
             "--image-pull-policy=Never",
             "--restart=Never",
+            "--labels=" + prepare_labels(labels),  # shell vuln?
             "--",
             "--port", str(port),
         ],
@@ -130,28 +147,96 @@ def run_kubectl_run(port):
     )
 
 
-async def async_main(service_name, host, port):
+type TargetSpec = tuple[dict[str, str], int]
+
+
+def target_spec_from_service(svc: Service) -> TargetSpec:
+    assert svc.metadata is not None, f'svc.metadata is None: {svc=}'
+    assert svc.spec is not None, f'svc.spec is None: {svc=}'
+    name = svc.metadata.name
+
+    # I checked the api spec for this one
+    selector = typing.cast(dict[str,str], svc.spec.selector)
+
+    ports = svc.spec.ports or []
+    if len(ports) <= 1:
+        raise ValueError(f'service {name} has no ports')
+    if len(ports) > 1:
+        log.warning(f'service {name} has more than one port, using first')
+
+    # Future: we could exclude udp ports
+    # Future: we could prefer http appProtocol over other options...
+
+    port = ports[0].targetPort or ports[0].port
+    if isinstance(port, str):
+        # Future: look up selected pods and work out what the name
+        # refers to
+        raise ValueError(f'service {name} has a named port, named ports not supported')
+
+    return selector, port
+
+
+async def setup_service(
+    name: str, namespace: str, port: int, exit_stack: AsyncExitStack,
+) -> TargetSpec:
+
+    config: SingleConfig | None = KubeConfig.from_env().get()
+    assert config is not None
+    client = AsyncClient(config=config)
 
     try:
-        async with trio.open_nursery() as nursery:
-            process = await nursery.start(run_kubectl_run(port))
-            nursery.start_soon(
-                accept_connections, nursery, process.stdio, (host, port),
+        svc = await client.get(Service, name)
+        assert isinstance(svc, Service)
+        return target_spec_from_service(svc)
+    except lightkube.ApiError as e:
+        if e.status.reason == "NotFound":
+            labels = {'app': name}
+            service = Service(
+                metadata=ObjectMeta(
+                    name=name, namespace=namespace, labels=labels,
+                ),
+                spec=ServiceSpec(
+                    ports=[ServicePort(port=port)], selector=labels,
+                )
             )
-    except subprocess.CalledProcessError as cpe:
-        print(f'calledprocesserror {cpe=}', file=sys.stderr)
-        raise
-    finally:
+            await client.create(service, name)
+            exit_stack.push_async_callback(
+                client.delete, Service, name, namespace=namespace,
+            )
+            return labels, port
+        else:
+            raise
+
+
+async def async_main(service_name: str, host: str, port: int, namespace: str):
+
+    async with AsyncExitStack() as exit_stack:
+        labels, remote_port = await setup_service(
+            service_name, namespace, port, exit_stack)
+
         try:
-            await trio.run_process(["kubectl", "delete", "pod", "kgrok-remote"])
-        except Exception as e:
-            print("failed to delete pod", repr(e))
+            async with trio.open_nursery() as nursery:
+                process = await nursery.start(
+                    run_kubectl_run(remote_port, labels, namespace)
+                )
+                nursery.start_soon(
+                    accept_connections, nursery, process.stdio, (host, port),
+                )
+        except subprocess.CalledProcessError as cpe:
+            log.warning(f'calledprocesserror {cpe=}')
+            raise
+        finally:
+            try:
+                await trio.run_process(["kubectl", "delete", "pod", "kgrok-remote"])
+            except Exception as e:
+                log.warning("failed to delete pod", repr(e))
 
 
 @click.command()
 @click.argument('service-name')
 @click.argument('host-port')
-def main(service_name, host_port):
+@click.option('-n', '--namespace', default="default" , help='the kubernetes namespace')
+def main(service_name, host_port, namespace):
     host = 'localhost'
     if ':' in host_port:
         host, port = host_port.split(':')
@@ -163,7 +248,7 @@ def main(service_name, host_port):
         level=logging.INFO,
     )
 
-    trio.run(async_main, service_name, host, port)
+    trio.run(async_main, service_name, host, port, namespace)
 
 
 if __name__ == '__main__':

@@ -46,6 +46,8 @@ class Handler:
                         await stream.send_all(data)
                     case ConnectionClosed(conn_id):
                         await stream.send_eof()
+                    case _:
+                        raise TypeError(type(value))
 
     async def _handle_recv(self, conn_id: int, stream: trio.SocketStream):
         # we must've got a connection
@@ -102,13 +104,16 @@ async def dispatch_stdin(
                 assert message is not None
                 channel = channels.get(message.conn_id)
                 if channel is not None:
-                    # Idea... one option might be to close the connection
+                    # Idea: one option might be to close the connection
                     # if the client stops reading.
                     await channel.send(message)
                     if isinstance(message, ConnectionClosed):
                         await channel.aclose()
                         del channels[message.conn_id]
                 else:
+                    # This really happened once in testing and the client
+                    # hung... so maybe we have a problem after all.
+                    # I think we have to switch back to the dict
                     log.warning(
                         f'dropped message for {message.conn_id=}',
                     )
