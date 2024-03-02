@@ -19,9 +19,9 @@ CONNECTION_COUNTER = count()
 
 
 class Handler:
-    def __init__(self) -> None:
+    def __init__(self, new_connections: SendChannel[tuple[int, SendChannel]]) -> None:
         self.stdout = trio.wrap_file(sys.stdout.buffer)
-        self.new_connections: SendChannel[tuple[int, SendChannel]]
+        self.new_connections = new_connections
 
     async def __call__(self, stream: trio.SocketStream) -> Any:
         conn_id = next(CONNECTION_COUNTER)
@@ -124,15 +124,14 @@ async def handle_sigterm(cancel_scope):
 
 
 async def listen(port: int):
-    handler = Handler()
-
     async with trio.open_nursery() as nursery:
         from_decode, to_dispatch = trio.open_memory_channel(0)
         nursery.start_soon(decode_stdin, from_decode)
         # nc = new channels/connections
-        handler.new_connections, nc_to_dispatch = trio.open_memory_channel(0)
+        nc_from_handler, nc_to_dispatch = trio.open_memory_channel(0)
         nursery.start_soon(dispatch_stdin, to_dispatch, nc_to_dispatch)
 
+        handler = Handler(nc_from_handler)
         nursery.start_soon(trio.serve_tcp, handler, port)
         nursery.start_soon(handle_sigterm, nursery.cancel_scope)
 

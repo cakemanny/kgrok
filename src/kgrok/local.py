@@ -103,7 +103,6 @@ async def accept_connections(
                 stack.push_async_exit(chan)
 
 
-
 def run_remote(port):
 
     return functools.partial(
@@ -115,11 +114,6 @@ def run_remote(port):
 
 
 def run_kubectl_run(port):
-    # Currently doing this to load into kind cluster:
-    #
-    #   docker build . -t kgrok-remote
-    #   kind load docker-image kgrok-remote
-    #
 
     return functools.partial(
         trio.run_process,
@@ -127,7 +121,7 @@ def run_kubectl_run(port):
             # The --rm doesn't seem to work without --tty
             # so, we have to call kubectl delete
             "kubectl", "run", "-i", "--rm", "kgrok-remote",
-            "--image=kgrok-remote",
+            "--image=kgrok-remote",  # TODO: change to ghcr.io/...
             "--port", str(port),
             "--image-pull-policy=Never",
             "--restart=Never",

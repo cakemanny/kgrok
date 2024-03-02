@@ -11,10 +11,10 @@ check_venv:
 endif
 
 .PHONY: all
-all: install
+all: install build load
 
 .PHONY: install
-install:
+install: requirements.txt requirements-test.txt
 	uv pip sync requirements-test.txt
 	uv pip install -e .
 
@@ -45,3 +45,13 @@ clean:
 	find . -type d -name __pycache__ -delete
 endif
 
+
+###
+
+.PHONY: build
+build: install
+	docker build . -t kgrok-remote
+
+.PHONY: load
+load: build
+	kind load docker-image kgrok-remote
