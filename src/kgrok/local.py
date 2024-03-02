@@ -4,20 +4,20 @@ import logging
 import subprocess
 import sys
 
-from trio.abc import SendStream
+from trio.abc import SendStream, SendChannel, ReceiveChannel
 import click
 import trio
 
 from kgrok.messages import (
-    ConnectionClosed, DataReceived, NewConnection, Text as msg,
+    ConnectionClosed, DataReceived, NewConnection, Text as encoding,
 )
 
 
 async def handle_connection(
     conn_id: int,
     local_svc_addr: tuple[str, int],
-    response_channel: trio.MemorySendChannel,
-    recv: trio.MemoryReceiveChannel,
+    response_channel: SendChannel,
+    recv: ReceiveChannel,
 ):
     host, port = local_svc_addr
     local_stream = await trio.open_tcp_stream(host, port)
@@ -49,11 +49,8 @@ async def write_responses(remote_stdin: SendStream, *,
     async with recv:
         async for message in recv:
             match message:
-                # TODO: we ought to define some sort of encoder interface
-                case DataReceived(conn_id, data):
-                    await remote_stdin.send_all(msg.data_received(conn_id, data))
-                case ConnectionClosed(conn_id):
-                    await remote_stdin.send_all(msg.connection_closed(conn_id))
+                case DataReceived() | ConnectionClosed():
+                    await remote_stdin.send_all(encoding.encode(message))
                 case other:
                     print(f'unexpected: {other=}', file=sys.stderr)
 
@@ -64,15 +61,15 @@ async def accept_connections(
     local_svc_addr: tuple[str, int]
 ):
 
-    response_channel: trio.MemorySendChannel = await nursery.start(
+    response_channel: SendChannel = await nursery.start(
         write_responses, remote_stdio.send_stream,
     )
 
-    connections: dict[int, trio.MemorySendChannel] = {}
+    connections: dict[int, SendChannel] = {}
 
     try:
         while True:
-            message = await msg.read_ipc_message(remote_stdio)
+            message = await encoding.read_ipc_message(remote_stdio)
             match message:
                 case NewConnection(conn_id):
                     send, recv = trio.open_memory_channel(80)

@@ -51,6 +51,23 @@ class Text:
             return DataReceived(conn_id, data)
         raise Exception(f'Unknown message with {prefix=}')
 
+    @staticmethod
+    def can_encode(msg) -> bool:
+        return isinstance(msg, (DataReceived, ConnectionClosed, NewConnection))
+
+    type Message = DataReceived | ConnectionClosed | NewConnection
+
+    @classmethod
+    def encode(cls, msg: Message) -> bytes:
+        match msg:
+            case DataReceived(conn_id, data):
+                return cls.data_received(conn_id, data)
+            case ConnectionClosed(conn_id):
+                return cls.connection_closed(conn_id)
+            case NewConnection(conn_id):
+                return cls.new_connection(conn_id)
+        raise TypeError(f'cannot encode {msg.__class.__.__name__}')
+
 
 @dataclass
 class DataReceived:

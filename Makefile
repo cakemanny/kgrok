@@ -54,4 +54,4 @@ build: install
 
 .PHONY: load
 load: build
-	kind load docker-image kgrok-remote
+	kind load docker-image kgrok-remote || k3d image load kgrok-remote

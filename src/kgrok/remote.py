@@ -1,5 +1,4 @@
 from itertools import count
-from typing import Any
 import logging
 import os
 import signal
@@ -10,7 +9,7 @@ import click
 import trio
 
 from kgrok.messages import (
-    ConnectionClosed, DataReceived, Text as msg,
+    ConnectionClosed, DataReceived, Text as encoding,
 )
 
 log = logging.getLogger(__name__)
@@ -23,7 +22,7 @@ class Handler:
         self.stdout = trio.wrap_file(sys.stdout.buffer)
         self.new_connections = new_connections
 
-    async def __call__(self, stream: trio.SocketStream) -> Any:
+    async def __call__(self, stream: trio.SocketStream):
         conn_id = next(CONNECTION_COUNTER)
 
         async with trio.open_nursery() as nursery:
@@ -31,6 +30,12 @@ class Handler:
             nursery.start_soon(self._handle_resp, conn_id, stream)
 
     async def _handle_resp(self, conn_id: int, stream: trio.SocketStream):
+        # The thought with the 80 here is that, configuring it to be 0
+        # would mean that all connections would block if this client stops
+        # reading ...
+        # The correct thing to do would be to
+        #  - a: timeout the sends and
+        #  - b: stop reading in recv if sends are not working.
         send, recv = trio.open_memory_channel(80)
         await self.new_connections.send((conn_id, send,))
 
@@ -44,17 +49,20 @@ class Handler:
 
     async def _handle_recv(self, conn_id: int, stream: trio.SocketStream):
         # we must've got a connection
-        await self.stdout.write(msg.new_connection(conn_id))
+        await self.stdout.write(encoding.new_connection(conn_id))
         try:
             async for data in stream:
-                await self.stdout.write(msg.data_received(conn_id, data))
+                await self.stdout.write(encoding.data_received(conn_id, data))
         finally:
-            await self.stdout.write(msg.connection_closed(conn_id))
+            await self.stdout.write(encoding.connection_closed(conn_id))
 
 
-async def combine[L, R](left: ReceiveChannel[L],
-                        right: ReceiveChannel[R],
-                        *, task_status=trio.TASK_STATUS_IGNORED):
+async def combine[L, R](
+    left: ReceiveChannel[L],
+    right: ReceiveChannel[R],
+    *,
+    task_status=trio.TASK_STATUS_IGNORED,
+):
     out: SendChannel[tuple[L, None] | tuple[None, R]]
     out, recv = trio.open_memory_channel(0)
     task_status.started(recv)
@@ -94,6 +102,8 @@ async def dispatch_stdin(
                 assert message is not None
                 channel = channels.get(message.conn_id)
                 if channel is not None:
+                    # Idea... one option might be to close the connection
+                    # if the client stops reading.
                     await channel.send(message)
                     if isinstance(message, ConnectionClosed):
                         await channel.aclose()
@@ -109,13 +119,13 @@ async def decode_stdin(decoded: SendChannel):
     # WARN: Absolutely no other use of stdin is allowed
     async with decoded, trio.lowlevel.FdStream(os.dup(sys.stdin.fileno())) as stdin:
         while True:
-            message = await msg.read_ipc_message(stdin)
+            message = await encoding.read_ipc_message(stdin)
             if message is None:
                 break
             await decoded.send(message)
 
 
-async def handle_sigterm(cancel_scope):
+async def handle_sigterm(cancel_scope: trio.CancelScope):
     with trio.open_signal_receiver(signal.SIGTERM) as signal_aiter:
         async for signum in signal_aiter:
             assert signum == signal.SIGTERM
