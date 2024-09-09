@@ -1,3 +1,4 @@
+import os
 from contextlib import AsyncExitStack
 import functools
 import logging
@@ -127,6 +128,8 @@ def prepare_labels(labels: dict[str, str]) -> str:
 
 
 def run_kubectl_run(port, labels, namespace):
+
+    image = os.getenv("KGROK_REMOTE_IMAGE", "ghcr.io/cakemanny/kgrok-remote")
 
     return functools.partial(
         trio.run_process,
