@@ -185,7 +185,7 @@ async def setup_service(
     client = AsyncClient(config=config)
 
     try:
-        svc = await client.get(Service, name)
+        svc = await client.get(Service, name, namespace=namespace)
         assert isinstance(svc, Service)
         return target_spec_from_service(svc)
     except lightkube.ApiError as e:
