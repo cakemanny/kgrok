@@ -129,7 +129,17 @@ def prepare_labels(labels: dict[str, str]) -> str:
 
 def run_kubectl_run(port, labels, namespace):
 
-    image = os.getenv("KGROK_REMOTE_IMAGE", "ghcr.io/cakemanny/kgrok-remote")
+    default_image = "ghcr.io/cakemanny/kgrok-remote"
+    image = os.getenv("KGROK_REMOTE_IMAGE", default_image)
+
+    extra_args = []
+    # For now this is something of a good indicator for a locally loaded
+    # dev image
+    if '/' not in image:  # locally loaded dev image
+        extra_args.append("--image-pull-policy=Never")
+
+    if namespace and namespace != 'default':
+        extra_args.append(f"--namespace={namespace}")
 
     return functools.partial(
         trio.run_process,
@@ -137,11 +147,11 @@ def run_kubectl_run(port, labels, namespace):
             # The --rm doesn't seem to work without --tty
             # so, we have to call kubectl delete
             "kubectl", "run", "-i", "--rm", "kgrok-remote",
-            "--image=kgrok-remote",  # TODO: change to ghcr.io/...
+            f"--image={image}",
             "--port", str(port),
-            "--image-pull-policy=Never",
             "--restart=Never",
             "--labels=" + prepare_labels(labels),  # shell vuln?
+            *extra_args,
             "--",
             "--port", str(port),
         ],
