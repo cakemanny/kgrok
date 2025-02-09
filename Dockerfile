@@ -1,21 +1,30 @@
+# syntax=docker/dockerfile:1
 # https://hub.docker.com/_/python
-FROM python:3.12-slim
 
+# builder:
+    FROM python:3.12-slim AS builder
 
-WORKDIR /app
-COPY requirements.txt pyproject.toml ./
+    WORKDIR /app
+    RUN pip install uv && uv venv .venv
 
-RUN pip install uv && uv venv .venv
-RUN . .venv/bin/activate \
-    && uv pip sync requirements.txt
+    ENV VIRTUAL_ENV=/app/.venv
+    ENV PATH=$VIRTUAL_ENV/bin:$PATH
 
-COPY src src
-RUN . .venv/bin/activate \
-    && uv pip install -e .
+    COPY requirements.txt pyproject.toml ./
 
-ENV PYTHONUNBUFFERED True
-ENV APP_HOME /app
-WORKDIR $APP_HOME
+    RUN uv pip sync requirements.txt
 
+    COPY src src
+    RUN uv pip install .
 
-ENTRYPOINT [".venv/bin/kgrok-remote"]
+# runtime:
+    FROM python:3.12-slim
+    COPY --from=builder /app/.venv /app/.venv
+
+    ENV PYTHONUNBUFFERED=True \
+        APP_HOME=/app \
+        VIRTUAL_ENV=/app/.venv
+    ENV PATH=$VIRTUAL_ENV/bin:$PATH
+    WORKDIR $APP_HOME
+
+    ENTRYPOINT ["kgrok-remote"]
