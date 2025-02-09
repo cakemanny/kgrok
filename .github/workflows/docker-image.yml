@@ -25,6 +25,16 @@ jobs:
         username: ${{ github.repository_owner }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Docker metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: |
+          ghcr.io/cakemanny/kgrok-remote
+        tags: |
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+
     - uses: actions/checkout@v4
 
     - name: Build and push
@@ -32,5 +42,5 @@ jobs:
       with:
         platforms: linux/amd64,linux/arm64
         push: true
-        tags: |
-          ghcr.io/cakemanny/kgrok-remote:latest
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
