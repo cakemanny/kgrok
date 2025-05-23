@@ -172,7 +172,7 @@ def target_spec_from_service(svc: Service) -> TargetSpec:
     selector = typing.cast(dict[str,str], svc.spec.selector)
 
     ports = svc.spec.ports or []
-    if len(ports) <= 1:
+    if len(ports) < 1:
         raise ValueError(f'service {name} has no ports')
     if len(ports) > 1:
         log.warning(f'service {name} has more than one port, using first')
