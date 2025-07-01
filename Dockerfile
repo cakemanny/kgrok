@@ -10,10 +10,11 @@
     ENV VIRTUAL_ENV=/app/.venv
     ENV PATH=$VIRTUAL_ENV/bin:$PATH
 
-    COPY requirements.txt pyproject.toml ./
+    COPY requirements.txt pyproject.toml LICENSE.txt ./
 
     RUN uv pip sync requirements.txt
 
+    COPY man man
     COPY src src
     RUN uv pip install .
 
