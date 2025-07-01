@@ -1,0 +1,85 @@
+'\" t
+.\"     Title: kgrok
+.\"    Author: Daniel Golding
+.\" Generator: Asciidoctor 2.0.23
+.\"      Date: 2025-07-01
+.\"    Manual: KGROK
+.\"    Source: KGROK
+.\"  Language: English
+.\"
+.TH "KGROK" "1" "2025-07-01" "KGROK" "KGROK"
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.ss \n[.ss] 0
+.nh
+.ad l
+.de URL
+\fI\\$2\fP <\\$1>\\$3
+..
+.als MTO URL
+.if \n[.g] \{\
+.  mso www.tmac
+.  am URL
+.    ad l
+.  .
+.  am MTO
+.    ad l
+.  .
+.  LINKSTYLE blue R < >
+.\}
+.SH "NAME"
+kgrok \- forward local processes into k8s cluster
+.SH "SYNOPSIS"
+.sp
+\fBkgrok\fP [\fIoption\fP]... \fIservice_name\fP \fIhost_port\fP
+.SH "OPTIONS"
+.sp
+\fB\-n, \-\-namespace\fP=\fInamespace\fP
+.RS 4
+The Kubernetes namespace.
+.RE
+.sp
+\fB\-\-help\fP
+.RS 4
+Print a short usage message.
+.RE
+.SH "EXIT STATUS"
+.sp
+\fB0\fP
+.RS 4
+Success.
+.RE
+.sp
+\fB1\fP
+.RS 4
+Failure.
+.RE
+.sp
+\fB2\fP
+.RS 4
+Invalid command line options or arguments were specified.
+.RE
+.SH "EXAMPLES"
+.sp
+Forwarding a process running on port 8080 as/into a service named \fBmyapp\fP
+.RS 4
+.RE
+.sp
+.if n .RS 4
+.nf
+.fam C
+kgrok \-n mynamespace myapp 8080
+.fam
+.fi
+.if n .RE
+.SH "BUGS"
+.sp
+They are tracked at \c
+.URL "https://github.com/cakemanny/kgrok/issues" "" ""
+.SH "SEE ALSO"
+.sp
+\fBFurther examples:\fP \c
+.URL "https://github.com/cakemanny/kgrok/tree/master/examples" "" ""
+.SH "AUTHOR"
+.sp
+Daniel Golding

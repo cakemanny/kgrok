@@ -55,3 +55,13 @@ build: install
 .PHONY: load
 load: build
 	kind load docker-image kgrok-remote || k3d image load kgrok-remote
+
+
+###
+
+.PHONY: man-preview
+man-preview: ./man/kgrok.1
+	man ./man/kgrok.1
+
+man/kgrok.1: man/kgrok.1.adoc
+	asciidoctor -b manpage $^

@@ -1,0 +1,51 @@
+// https://docs.asciidoctor.org/asciidoctor/latest/manpage-backend/
+= kgrok(1)
+Daniel Golding
+v0.1.3
+:doctype: manpage
+:manmanual: KGROK
+:mansource: KGROK
+:man-linkstyle: pass:[blue R < >]
+
+== Name
+
+kgrok - forward local processes into k8s cluster
+
+== Synopsis
+
+*kgrok* [_option_]... _service_name_ _host_port_
+
+== Options
+
+*-n, --namespace*=_namespace_::
+  The Kubernetes namespace.
+
+*--help*::
+  Print a short usage message.
+
+== Exit status
+
+*0*::
+  Success.
+
+*1*::
+  Failure.
+
+*2*::
+  Invalid command line options or arguments were specified.
+
+== Examples
+
+Forwarding a process running on port 8080 as/into a service named *myapp*::
+----
+kgrok -n mynamespace myapp 8080
+----
+
+== Bugs
+
+They are tracked at https://github.com/cakemanny/kgrok/issues
+
+== See Also
+
+*Further examples:* https://github.com/cakemanny/kgrok/tree/master/examples
+
