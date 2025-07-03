@@ -1,8 +1,10 @@
 name: Publish Docker Image
 
 on:
+  push:
+    branches: [ master ]
   release:
-    types: [published]
+    types: [ published ]
 
 jobs:
   build:
@@ -41,6 +43,6 @@ jobs:
       uses: docker/build-push-action@v6
       with:
         platforms: linux/amd64,linux/arm64
-        push: true
+        push: ${{ startsWith(github.ref, 'refs/tags/') }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}

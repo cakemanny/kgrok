@@ -32,3 +32,13 @@ jobs:
       run: |
         source .venv/bin/activate
         make test
+
+    - name: Check build
+      run: |
+        uv pip install build
+        uv run -m build
+        rm -rf .venv
+        uv venv
+        source .venv/bin/activate
+        uv pip install dist/kgrok-*.whl
+        kgrok --help
