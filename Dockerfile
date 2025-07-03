@@ -3,9 +3,10 @@
 
 # builder:
     FROM python:3.12-slim AS builder
+    COPY --from=docker.io/astral/uv:latest /uv /uvx /bin/
 
     WORKDIR /app
-    RUN pip install uv && uv venv .venv
+    RUN uv venv .venv
 
     ENV VIRTUAL_ENV=/app/.venv
     ENV PATH=$VIRTUAL_ENV/bin:$PATH
