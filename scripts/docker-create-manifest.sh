@@ -26,5 +26,4 @@ for tag in "${tags[@]}"; do
     docker builder imagetools create -t "${image}:${tag}" \
         "${image}:${tag}-amd64" \
         "${image}:${tag}-arm64"
-    docker push "${image}:${tag}"
 done
