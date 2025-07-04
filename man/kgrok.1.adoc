@@ -1,7 +1,6 @@
 // https://docs.asciidoctor.org/asciidoctor/latest/manpage-backend/
 = kgrok(1)
 Daniel Golding
-v0.1.4
 :doctype: manpage
 :manmanual: KGROK
 :mansource: KGROK
