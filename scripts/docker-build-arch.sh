@@ -46,8 +46,6 @@ if [[ $push != "yes" ]]; then
 fi
 
 # shellcheck disable=SC2046
-docker push $(
-  for tag in "${tags[@]}"; do
-      printf "%s " "${image}:${tag}-${suffix}"
-  done
-)
+for tag in "${tags[@]}"; do
+  docker push "${image}:${tag}-${suffix}"
+done
