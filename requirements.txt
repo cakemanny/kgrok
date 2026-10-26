@@ -6,7 +6,7 @@ attrs==25.3.0
     # via
     #   outcome
     #   trio
-certifi==2025.6.15
+certifi==2026.10.19
     # via
     #   httpcore
     #   httpx
@@ -39,3 +39,5 @@ sortedcontainers==2.4.0
     # via trio
 trio==0.30.0
     # via -r requirements.in
+typing-extensions==4.16.0
+    # via anyio

@@ -9,7 +9,7 @@ attrs==25.3.0
     #   -r requirements.txt
     #   outcome
     #   trio
-certifi==2025.6.15
+certifi==2026.10.19
     # via
     #   -r requirements.txt
     #   httpcore
@@ -76,3 +76,7 @@ trio==0.30.0
     # via
     #   -r requirements.txt
     #   pytest-trio
+typing-extensions==4.16.0
+    # via
+    #   -r requirements.txt
+    #   anyio
